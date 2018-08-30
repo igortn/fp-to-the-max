@@ -1,5 +1,7 @@
 package fpmax
 
+import fpmax.App2.ConsoleOut.{DoYouWantToContinue, GuessNumber, InputNotNumber, RightGuess, WelcomeToGame, WhatIsYourName, WrongGuess}
+
 import scala.util.Try
 
 object App2 {
@@ -57,7 +59,11 @@ object App2 {
   object IO {
     def apply[A](unsafeRun: () => A): IO[A] = new IO(unsafeRun)
     def pure[A](a: A): IO[A] = new IO(() => a)
+  }
 
+  /*********************************************************************************/
+
+  object implicits {
     implicit val programInst: Program[IO] =
       new Program[IO] {
         def finish[A](a: => A): IO[A] = IO.pure(a)
@@ -79,9 +85,39 @@ object App2 {
 
   /*********************************************************************************/
 
+  sealed trait ConsoleOut {
+    def enc: String
+  }
+
+  object ConsoleOut {
+    case object WhatIsYourName extends ConsoleOut {
+      def enc = "What is your name?"
+    }
+    case class WelcomeToGame(name: String) extends ConsoleOut {
+      def enc = s"Hello, $name, welcome to the game!"
+    }
+    case class GuessNumber(name: String) extends ConsoleOut {
+      def enc = s"$name, guess a number from 1 to 5:"
+    }
+    case object InputNotNumber extends ConsoleOut {
+      def enc = "Input is not a number."
+    }
+    case class RightGuess(name: String) extends ConsoleOut {
+      def enc = s"You guessed right, $name!"
+    }
+    case class WrongGuess(name: String, num: Int) extends ConsoleOut {
+      def enc = s"You guessed wrong, $name! The number was $num."
+    }
+    case class DoYouWantToContinue(name: String) extends ConsoleOut {
+      def enc = s"Do you want to continue, $name?"
+    }
+  }
+
+  /*********************************************************************************/
+
   def checkContinue[F[_] : Program : Console](name: String): F[Boolean] =
     for {
-      _      <- Console[F].putStrLn(s"Do you want to continue, $name?")
+      _      <- Console[F].putStrLn(DoYouWantToContinue(name).enc)
       answer <- Console[F].getStrLn
       result <- answer.toLowerCase() match {
         case "y" => Program[F].finish(true)
@@ -92,14 +128,14 @@ object App2 {
   def gameLoop[F[_] : Program : Console : Random](name: String): F[Unit] =
     for {
       num   <- Random[F].nextInt(5)
-      _     <- Console[F].putStrLn(s"$name, guess a number from 1 to 5:")
+      _     <- Console[F].putStrLn(GuessNumber(name).enc)
       input <- Console[F].getStrLn
       _     <- parseInt(input).fold(
-        Console[F].putStrLn("Input is not a number."))(
+        Console[F].putStrLn(InputNotNumber.enc))(
         n => if (n == num) {
-          Console[F].putStrLn(s"You guessed right, $name!")
+          Console[F].putStrLn(RightGuess(name).enc)
         } else {
-          Console[F].putStrLn(s"You guessed wrong, $name! The number was $num.")
+          Console[F].putStrLn(WrongGuess(name, num).enc)
         })
       cont  <- checkContinue(name)
       _     <- if (cont) gameLoop(name) else Program[F].finish(())
@@ -108,12 +144,14 @@ object App2 {
   def main[F[_] : Program : Console : Random](): F[Unit] = {
 
     for {
-      _    <- Console[F].putStrLn("What is your name?")
+      _    <- Console[F].putStrLn(WhatIsYourName.enc)
       name <- Console[F].getStrLn
-      _    <- Console[F].putStrLn(s"Hello, $name, welcome to the game!")
+      _    <- Console[F].putStrLn(WelcomeToGame(name).enc)
       _    <- gameLoop(name)
     } yield ()
   }
+
+  import implicits._
 
   def mainIO(): IO[Unit] = main[IO]()
 }
